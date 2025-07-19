@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nitrogen-rich Energetic Materials Information Database (Nemesis)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 3D 视图容器样式 */
+        #viewer {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ccc;
+            position: relative;
+        }
+
+        /* 加载消息样式 */
+        #viewer-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 16px;
+            color: #666;
+            text-align: center;
+        }
+
+        /* 动画效果 */
+        .animate-hover {
+            transition: all 0.3s ease;
+        }
+
+        /* 表格字体大小 */
+        #data-table td {
+            font-size: 1.2rem;
+        }
+
+        .animate-hover:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* 作者信息样式 */
+        .author-info {
+            text-align: center;
+            font-size: 0.9rem;
+            color: #4b5563;
+            margin-top: 10px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .author-info a {
+            color: #1d4ed8;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .author-info a:hover {
+            color: #1e3a8a;
+            text-decoration: underline;
+        }
+
+        /* 折叠按钮样式 */
+        .toggle-author-info {
+            background: none;
+            border: none;
+            color: #1d4ed8;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-decoration: underline;
+            transition: color 0.3s ease;
+        }
+
+        .toggle-author-info:hover {
+            color: #1e3a8a;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 font-sans relative">
+    <div class="container mx-auto p-8">
+        <h1 class="text-3xl font-bold text-center text-blue-500 mb-4">Nitrogen-rich Energetic Materials Information Database (Nemesis)</h1>
+        <div class="flex justify-center">
+            <button class="toggle-author-info" onclick="toggleAuthorInfo()">
+                <i class="fa-solid fa-info-circle mr-1"></i>
+                Show Author Information
+            </button>
+        </div>
+        <div class="author-info" id="authorInfo">
+            Developed by Laboratory of High Pressure Physics and Material Science, Qufu Normal University (Guanghui Zhang, Wencai Yi)<br>
+            Contact: <a href="mailto:yi.wencai@163.com">yi.wencai@163.com</a>
+        </div>
+
+        <!-- Search Box -->
+        <div class="search-container max-w-2xl mx-auto mb-8">
+            <input type="text" id="search-box" placeholder="Search by chemical formula..." 
+                   oninput="renderTable()"
+                   class="w-full p-3 border border-blue-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring focus:ring-blue-200 text-lg">
+        </div>
+
+        <table id="data-table" class="w-full bg-white rounded-lg shadow-md overflow-hidden mb-8">
+            <thead class="bg-blue-500 text-white">
+                <tr>
+                    <th onclick="sortBy('id')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">ID</th>
+                    <th onclick="sortBy('formula')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">Formula</th>
+                    <th onclick="sortBy('mass_density')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">
+                        <span id="th-mass_density">Mass Density (g/cm<sup>3</sup>)</span>
+                    </th>
+                    <th onclick="sortBy('N_concentration')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">
+                        <span id="th-N_concentration">N Concentration (%)</span>
+                    </th>
+                    <th onclick="sortBy('E_d')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">
+                        <span id="th-E_d">E<sub>d</sub> (kJ/g)</span>
+                    </th>
+                    <th onclick="sortBy('V_d')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">
+                        <span id="th-V_d">V<sub>d</sub> (km/s)</span>
+                    </th>
+                    <th onclick="sortBy('P_d')" class="p-4 font-bold text-left cursor-pointer hover:bg-blue-600">
+                        <span id="th-P_d">P<sub>d</sub> (GPa)</span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Data will be inserted here -->
+            </tbody>
+        </table>
+
+        <!-- Pagination Controls -->
+        <div class="pagination flex justify-center gap-4 mb-8">
+            <button onclick="changePage('prev')" id="prev-btn"
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover">
+                <i class="fa-solid fa-arrow-left mr-2"></i> Previous
+            </button>
+            <span id="page-number" class="flex items-center font-medium text-blue-500"></span>
+            <button onclick="changePage('next')" id="next-btn"
+                    class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover">
+                Next <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function toSubscript(text) {
+            const subscriptMap = {
+                '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+                '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉'
+            };
+            return text.replace(/\d/g, digit => subscriptMap[digit] || digit);
+        }
+
+        function formatNumber(value) {
+            if (value === undefined || value === null || isNaN(value)) {
+                return 'N/A';
+            }
+            return parseFloat(value).toFixed(3);
+        }
+
+        let sortColumn = null;
+        let sortDirection = 'desc';
+        let data = {};
+        let currentPage = 1;
+        const rowsPerPage = 20;
+
+        // Fetch the JSON data
+        fetch('db.json')
+           .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+           .then(jsonData => {
+                data = jsonData;
+                console.log('Fetched data:', data); // 打印获取到的数据
+                renderTable();
+            })
+           .catch(error => {
+                console.error('Error loading JSON data:', error);
+                alert('Failed to load data. Please check the console for more details.');
+            });
+
+        function sortBy(column) {
+            if (sortColumn === column) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = column;
+                sortDirection = 'desc';
+            }
+            renderTable();
+        }
+
+        // Render table with current page and search query
+        function renderTable() {
+            const tableBody = document.querySelector('#data-table tbody');
+            tableBody.innerHTML = '';
+
+            const searchQuery = document.getElementById('search-box').value.toLowerCase();
+            const filteredData = Object.entries(data).filter(([entryId, entry]) =>
+                entry.formula.toLowerCase().includes(searchQuery)
+            );
+
+            function updateSortArrows() {
+                const allHeaders = ['mass_density', 'N_concentration', 'E_d', 'V_d', 'P_d'];
+                allHeaders.forEach(header => {
+                    const thSpan = document.getElementById('th-' + header);
+                    if (thSpan) {
+                        thSpan.innerHTML = getColumnDisplayName(header) + 
+                            (sortColumn === header ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : '');
+                    }
+                });
+            }
+
+            function getColumnDisplayName(col) {
+                switch (col) {
+                    case 'mass_density': return 'Mass Density (g/cm³)';
+                    case 'N_concentration': return 'N Concentration (%)';
+                    case 'E_d': return 'E<sub>d</sub> (kJ/g)';
+                    case 'V_d': return 'V<sub>d</sub> (km/s)';
+                    case 'P_d': return 'P<sub>d</sub> (GPa)';
+                    default: return col;
+                }
+            }
+
+            if (sortColumn) {
+                filteredData.sort((a, b) => {
+                    let aVal = sortColumn === 'id' ? parseInt(a[0]) : a[1][sortColumn];
+                    let bVal = sortColumn === 'id' ? parseInt(b[0]) : b[1][sortColumn];
+
+                    aVal = (aVal === undefined || aVal === null) ? -Infinity : aVal;
+                    bVal = (bVal === undefined || bVal === null) ? -Infinity : bVal;
+
+                    if (typeof aVal === 'number' && typeof bVal === 'number') {
+                        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    } else {
+                        return sortDirection === 'asc' ?
+                            String(aVal).localeCompare(String(bVal)) :
+                            String(bVal).localeCompare(String(aVal));
+                    }
+                });
+            }
+
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = currentPage * rowsPerPage;
+            const paginatedData = filteredData.slice(startIndex, endIndex);
+
+            paginatedData.forEach(([entryId, entry]) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="p-4 border-b border-gray-200">${entryId}</td>
+                    <td class="p-4 border-b border-gray-200">${toSubscript(entry.formula)}</td>
+                    <td class="p-4 border-b border-gray-200">${formatNumber(entry.mass_density)}</td>
+                    <td class="p-4 border-b border-gray-200">${formatNumber(entry.N_concentration)}</td>
+                    <td class="p-4 border-b border-gray-200">${formatNumber(entry.E_d)}</td>
+                    <td class="p-4 border-b border-gray-200">${formatNumber(entry.V_d)}</td>
+                    <td class="p-4 border-b border-gray-200">${formatNumber(entry.P_d)}</td>
+                `;
+                row.addEventListener('click', () => showDetailsInNewPage(entryId));
+                tableBody.appendChild(row);
+            });
+
+            updatePagination(filteredData.length);
+            updateSortArrows();
+        }
+
+        function changePage(direction) {
+            const totalRows = Object.keys(data).length;
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+
+            if (direction === 'prev' && currentPage > 1) {
+                currentPage--;
+            } else if (direction === 'next' && currentPage < totalPages) {
+                currentPage++;
+            }
+            renderTable();
+        }
+
+        function updatePagination(totalRows) {
+            const totalPages = Math.ceil(totalRows / rowsPerPage);
+            document.getElementById('page-number').textContent = 
+                `Page ${currentPage} of ${totalPages}`;
+        }
+
+        function showDetailsInNewPage(entryId) {
+            const entry = data[entryId];
+            const queryParams = new URLSearchParams({
+                id: entryId,
+                formula: entry.formula,
+                mass_density: entry.mass_density || 'N/A',
+                N_concentration: entry.N_concentration || 'N/A',
+                E_d: entry.E_d || 'N/A',
+                V_d: entry.V_d || 'N/A',
+                P_d: entry.P_d || 'N/A',
+                positions: JSON.stringify(entry.positions || 'N/A'),
+                cell: JSON.stringify(entry.cell || 'N/A')
+            });
+            window.open(`detail.html?${queryParams.toString()}`, '_blank');
+        }
+        
+        function updateSortArrows() {
+            document.querySelectorAll('th').forEach(header => {
+                header.removeAttribute('data-sort-direction');
+                if (header.textContent.includes(sortColumn)) {
+                    header.setAttribute('data-sort-direction', sortDirection);
+                }
+            });
+        }
+
+        function toggleAuthorInfo() {
+            const authorInfo = document.getElementById('authorInfo');
+            const button = document.querySelector('.toggle-author-info');
+            if (authorInfo.style.maxHeight === '0px' || authorInfo.style.maxHeight === '') {
+                authorInfo.style.maxHeight = authorInfo.scrollHeight + 'px';
+                button.innerHTML = '<i class="fa-solid fa-info-circle mr-1"></i> Hide Author Information';
+            } else {
+                authorInfo.style.maxHeight = '0px';
+                button.innerHTML = '<i class="fa-solid fa-info-circle mr-1"></i> Show Author Information';
+            }
+        }
+    </script>
+</body>
+
+</html>
+    

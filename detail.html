@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Material Details - Nemesis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.1/3Dmol-min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 3D 视图容器样式 */
+        #viewer {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ccc;
+            position: relative;
+        }
+
+        /* 加载消息样式 */
+        #viewer-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 16px;
+            color: #666;
+            text-align: center;
+        }
+
+        /* 动画效果 */
+        .animate-hover {
+            transition: all 0.3s ease;
+        }
+
+        .animate-hover:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-8 flex flex-wrap justify-center gap-8">
+        <!-- 材料信息区域 -->
+        <div class="info w-full md:w-1/2 bg-white p-6 rounded-lg shadow-md animate-hover">
+            <h2 id="formula" class="text-2xl font-bold text-center mb-4">加载中...</h2>
+            <p class="mb-2"><strong>Space Group:</strong> <span id="space_group"></span></p>
+            <p class="mb-2"><strong>Mass Density:</strong> <span id="density"></span> g/cm³</p>
+            <p class="mb-2"><strong>Nitrogen Concentration:</strong> <span id="n_concentration"></span>%</p>
+            <p class="mb-2"><strong>Energy Density (E<sub>d</sub>):</strong> <span id="ed"></span> kJ/g</p>
+            <p class="mb-2"><strong>Detonation Velocity (V<sub>d</sub>):</strong> <span id="vd"></span> km/s</p>
+            <p class="mb-2"><strong>Detonation Pressure (P<sub>d</sub>):</strong> <span id="pd"></span> GPa</p>
+            <p class="mb-2"><strong>Reaction:</strong> <span id="reaction"></span></p>
+            <p class="mb-2"><strong>Energy:</strong> <span id="energy"></span></p>
+            <p class="mb-4"><strong>doi:</strong> <span id="doi"></span></p>
+            
+            <div class="button-container flex flex-wrap justify-center gap-4">
+                <button id="download-cif" class="btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover" disabled>
+                    <i class="fa-solid fa-download mr-2"></i> Download the CIF file
+                </button>
+                <button id="toggle-lattice" class="btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover" disabled>
+                    <i class="fa-solid fa-table-cells mr-2"></i> Display the lattice pattern
+                </button>
+                <button id="toggle-labels" class="btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover" disabled>
+                    <i class="fa-solid fa-tag mr-2"></i> Display atomic labels
+                </button>
+            </div>
+
+            <!-- INCAR 参数区域 -->
+            <div class="incar-section mt-6 border-t border-gray-200 pt-6">
+                <details class="bg-gray-50 p-4 rounded-md mb-4">
+                    <summary class="cursor-pointer font-bold text-gray-700">VASP Calculation Parameters (INCAR)</summary>
+                    <pre class="incar-content bg-gray-100 border border-gray-300 p-4 rounded-md text-sm">
+PREC   = Normal
+ENCUT  = 520 eV
+NELMIN = 5
+LREAL = F    
+KSPACING = 0.15
+EDIFF  = 1E-5
+SIGMA = 0.2
+ISPIN = 1    
+KPAR = 4
+NPAR = 1     
+# Ionic Relaxation
+ICHARG = 2
+EDIFFG = -0.01        
+NSW    = 300          
+IBRION = 2
+POTIM = 0.5
+ISIF   = 3            
+PSTRESS = 0
+LCHARG =  F
+LWAVE  =  F</pre>
+                </details>
+                <button class="btn bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md animate-hover" onclick="downloadINCAR()">
+                    <i class="fa-solid fa-download mr-2"></i> Download INCAR
+                </button>
+            </div>
+        </div>
+
+        <!-- 3D 视图区域 -->
+        <div class="viewer-container w-full md:w-1/2 bg-white p-6 rounded-lg shadow-md animate-hover">
+            <div id="viewer">
+                <div id="viewer-message">加载结构中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = urlParams.get('id');
+        let currentCIF = '';
+        let viewer = null;
+        let latticeVisible = false;
+        let labelsVisible = false;
+
+        // 数据获取与初始化
+        fetch('db.json')
+          .then(response => response.json())
+          .then(data => {
+                const material = data[id];
+                if (!material) {
+                    showErrorMessage("未找到材料数据");
+                    return;
+                }
+
+                updateMaterialInfo(material);
+                initializeViewer(material);
+            })
+          .catch(err => {
+                console.error("数据获取失败:", err);
+                showErrorMessage("数据加载失败");
+            });
+
+        function showErrorMessage(msg) {
+            document.getElementById('formula').innerText = msg;
+            document.getElementById('viewer-message').innerText = msg;
+        }
+
+        function italicizeLettersOnly(str) {
+            return str.replace(/[A-Za-z]+/g, match => `<em>${match}</em>`);
+        }
+
+        function updateMaterialInfo(material) {
+            document.getElementById('formula').innerHTML = formatFormula(material.formula);
+            document.getElementById('space_group').innerHTML =
+                material.space_group_symbol && material.space_group_number
+                   ? `${italicizeLettersOnly(material.space_group_symbol)} (No. ${material.space_group_number})`
+                    : 'N/A';
+            document.getElementById('density').innerText = material.mass_density?.toFixed(3) ?? 'N/A';
+            document.getElementById('n_concentration').innerText = material.N_concentration?.toFixed(3) ?? 'N/A';
+            document.getElementById('ed').innerText = material.E_d?.toFixed(3) ?? 'N/A';
+            document.getElementById('vd').innerText = material.V_d?.toFixed(3) ?? 'N/A';
+            document.getElementById('pd').innerText = material.P_d?.toFixed(3) ?? 'N/A';
+            document.getElementById('reaction').innerHTML = formatFormula(material.reaction?.replace(/->/g, '→') ?? 'N/A');
+            const energyStr = material.energy || 'N/A';
+            const formattedEnergy = energyStr
+              .replace(/(-?\d+\.\d+)/g, (match) => parseFloat(match).toFixed(3))
+              .replace(/([A-Za-z]+)(\d+)/g, (_, elem, num) => `${elem}<sub>${num}</sub>`);
+            document.getElementById('energy').innerHTML = formattedEnergy;
+            document.getElementById('doi').innerHTML = material.doi ?? 'N/A';
+        }
+
+        function initializeViewer(material) {
+            try {
+                currentCIF = generateCIF(material);
+                viewer = $3Dmol.createViewer(document.getElementById("viewer"), { 
+                    backgroundColor: "white",
+                    defaultZoom: 1.0
+                });
+                viewer.addModel(currentCIF, "cif");
+                renderAtomsAndBonds();
+                viewer.zoomTo();
+                viewer.center();
+                enableControls();
+                document.getElementById("viewer-message")?.remove();
+            } catch (err) {
+                console.error("3D结构渲染失败:", err);
+                document.getElementById('viewer-message').innerText = "3D结构加载失败";
+            }
+        }
+
+        function renderAtomsAndBonds() {
+            if (!viewer) return;
+
+            // 清除残留元素
+            viewer.removeAllShapes();
+            viewer.removeAllLabels();
+
+            // 设置基础样式
+            viewer.setStyle({}, { 
+                stick: { radius: 0.15 }, 
+                sphere: { 
+                    scale: 0.3,
+                    colorscheme: "Jmol"
+                } 
+            });
+
+            // 原子标签显示
+            if (labelsVisible) {
+                const atoms = viewer.getModel().selectedAtoms({});
+                atoms.forEach(atom => {
+                    viewer.addLabel(atom.elem, {
+                        position: atom,
+                        fontSize: 0.8,
+                        fontColor: 'blue',
+                        backgroundColor: 0xeeeeee,
+                        backgroundOpacity: 0.7,
+                        inFront: true
+                    });
+                });
+            }
+
+            // 晶格显示
+            if (latticeVisible) {
+                viewer.addUnitCell({
+                    box: { color: 0x0000ff, radius: 0.1 },
+                    a: { color: 0xff0000, radius: 0.1 },
+                    b: { color: 0x00ff00, radius: 0.1 },
+                    c: { color: 0x0000ff, radius: 0.1 }
+                });
+            }
+
+            viewer.render();
+        }
+
+        function enableControls() {
+            document.getElementById('download-cif').disabled = false;
+            document.getElementById('toggle-lattice').disabled = false;
+            document.getElementById('toggle-labels').disabled = false;
+        }
+
+        // 事件监听
+        document.getElementById('download-cif').addEventListener('click', () => {
+            if (!currentCIF) return;
+
+            const blob = new Blob([currentCIF], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `material_${id}.cif`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('toggle-lattice').addEventListener('click', function() {
+            latticeVisible = !latticeVisible;
+            this.textContent = latticeVisible ? "Hide the lattice pattern" : "Display the lattice pattern";
+            renderAtomsAndBonds();
+        });
+
+        document.getElementById('toggle-labels').addEventListener('click', function() {
+            labelsVisible = !labelsVisible;
+            this.textContent = labelsVisible ? "Hide atomic labels" : "Display atomic labels";
+            renderAtomsAndBonds();
+        });
+
+        // INCAR下载功能
+        function downloadINCAR() {
+            const content = document.querySelector('.incar-content').textContent;
+            const blob = new Blob([content], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `INCAR_${id}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 工具函数
+        function generateCIF(data) {
+            const { cell, symbols, positions } = data;
+            let cif = "data_generated\n";
+            cif += "_cell_length_a " + cell[0][0].toFixed(6) + "\n";
+            cif += "_cell_length_b " + cell[1][1].toFixed(6) + "\n";
+            cif += "_cell_length_c " + cell[2][2].toFixed(6) + "\n";
+            cif += "_cell_angle_alpha 90\n";
+            cif += "_cell_angle_beta 90\n";
+            cif += "_cell_angle_gamma 90\n";
+            cif += "loop_\n_atom_site_label\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\n";
+
+            for (let i = 0; i < symbols.length; i++) {
+                const [x, y, z] = positions[i];
+                const fx = x / cell[0][0];
+                const fy = y / cell[1][1];
+                const fz = z / cell[2][2];
+                cif += `${symbols[i]} ${fx.toFixed(6)} ${fy.toFixed(6)} ${fz.toFixed(6)}\n`;
+            }
+            return cif;
+        }
+
+        function formatFormula(formula) {
+            return formula.replace(/([A-Za-z]+)(\d*)/g, (_, elem, num) => 
+                num ? `${elem}<sub>${num}</sub>` : elem
+            );
+        }
+    </script>
+</body>
+</html>
+    
